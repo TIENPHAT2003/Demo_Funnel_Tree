@@ -1,8 +1,8 @@
 from djitellopy import Tello
 import time
+import threading
 
-# Địa chỉ IP của Tello (Cập nhật nếu cần)
-TELLO_IP = "192.168.137.35"
+TELLO_IP = "192.168.137.233"
 
 class PID:
     def __init__(self, Kp, Ki, Kd, sample_time, output_limits=(-200, 200)):
@@ -31,72 +31,54 @@ class PID:
         self.output = max(min(self.output, self.out_max), self.out_min)
         return self.output
 
+def pid_control_loop(pid_outer, pid_inner, get_current_value, target, output_dict, key):
+    while True:
+        error = target - get_current_value()
+        outer_control = pid_outer.compute(error)
+        output_dict[key] = int(pid_inner.compute(outer_control))
+        time.sleep(pid_outer.sample_time)
+
 def main():
     tello = Tello(host=TELLO_IP)
     tello.connect()
 
     print(f"\n🚀 Kết nối thành công! Pin còn lại: {tello.get_battery()}%\n")
 
-    # PID cho Yaw
-    outer_pid_yaw = PID(Kp=3, Ki=0.5, Kd=0, sample_time=100)
-    inner_pid_yaw = PID(Kp=0.5, Ki=0.005, Kd=0, sample_time=100)
+    # Tạo các PID
+    pid_configs = {
+        "yaw": (PID(5, 5, 0, 100), PID(0.5, 0.005, 0, 100), tello.get_yaw, 0),
+        "roll": (PID(3, 1, 0, 100), PID(0.5, 0.005, 0, 100), tello.get_roll, 0),
+        "pitch": (PID(3, 1, 0, 100), PID(0.5, 0.005, 0, 100), tello.get_pitch, 0),
+        "vx": (PID(10, 3, 0, 100), PID(1, 0.05, 0, 100), tello.get_speed_x, 0),
+        "vy": (PID(10, 3, 0, 100), PID(1, 0.05, 0, 100), tello.get_speed_y, 0)
+    }
+
+    control_outputs = {key: 0 for key in pid_configs}
     
-    # PID cho Roll
-    outer_pid_roll = PID(Kp=3, Ki=0.5, Kd=0, sample_time=100)
-    inner_pid_roll = PID(Kp=0.5, Ki=0.005, Kd=0, sample_time=100)
-    
-    # PID cho Pitch
-    outer_pid_pitch = PID(Kp=3, Ki=0.5, Kd=0, sample_time=100)
-    inner_pid_pitch = PID(Kp=0.5, Ki=0.005, Kd=0, sample_time=100)
-    
-    # Góc mong muốn
-    target_yaw = 0  
-    target_roll = 0  
-    target_pitch = 0  
+    # Khởi động luồng PID
+    threads = []
+    for key, (outer_pid, inner_pid, sensor_func, target) in pid_configs.items():
+        thread = threading.Thread(target=pid_control_loop, args=(outer_pid, inner_pid, sensor_func, target, control_outputs, key))
+        thread.daemon = True
+        thread.start()
+        threads.append(thread)
 
     tello.takeoff()
     print("🛫 Drone đã cất cánh!")
-
+    
     try:
         while True:
-            yaw = tello.get_yaw()
-            roll = tello.get_roll()
-            pitch = tello.get_pitch()
-
-            # Tính toán PID cho Yaw
-            error_yaw = target_yaw - yaw
-            outer_control_yaw = outer_pid_yaw.compute(error_yaw)
-            yaw_rate_control = int(inner_pid_yaw.compute(outer_control_yaw))
-
-            # Tính toán PID cho Roll
-            error_roll = target_roll - roll
-            outer_control_roll = outer_pid_roll.compute(error_roll)
-            roll_rate_control = int(inner_pid_roll.compute(outer_control_roll))
-
-            # Tính toán PID cho Pitch
-            error_pitch = target_pitch - pitch
-            outer_control_pitch = outer_pid_pitch.compute(error_pitch)
-            pitch_rate_control = int(inner_pid_pitch.compute(outer_control_pitch))
-
-            # Điều khiển drone
-            tello.send_rc_control(roll_rate_control, pitch_rate_control, 0, yaw_rate_control)
-            
-            # Đọc dữ liệu
-            vgx = tello.get_speed_x()
-            vgy = tello.get_speed_y()
-            vgz = tello.get_speed_z()
-            tof_distance = tello.get_distance_tof()
-            height = tello.get_height()
-            baro_height = tello.get_barometer()
-            
+            tello.send_rc_control(control_outputs["roll"], control_outputs["vx"], 0, control_outputs["yaw"])
+            print(f"📌 Pitch: {tello.get_pitch()}° (Control: {control_outputs['pitch']}) | "
+                  f"Roll: {tello.get_roll()}° (Control: {control_outputs['roll']}) | "
+                  f"Yaw: {tello.get_yaw()}° (Control: {control_outputs['yaw']})")
+            print(f"💨 Speed -> Vgx: {tello.get_speed_x()} mm/s (Control: {control_outputs['vx']}) | "
+                  f"Vgy: {tello.get_speed_y()} mm/s (Control: {control_outputs['vy']})")
+            print(f"⚡ Acceleration -> Agx: {tello.get_acceleration_x()} m/s² | "
+                  f"Agy: {tello.get_acceleration_y()} m/s² | "
+                  f"Agz: {tello.get_acceleration_z()} m/s²")
+            print(f"📏 ToF Height: {tello.get_distance_tof()} mm | 📡 Takeoff Height: {tello.get_height()} cm")
             print("=" * 50)
-            print(f"📌 Pitch: {pitch}° (Control: {pitch_rate_control}) | Roll: {roll}° (Control: {roll_rate_control}) | Yaw: {yaw}° (Control: {yaw_rate_control})")
-            print(f"💨 Speed -> Vgx: {vgx} mm/s | Vgy: {vgy} mm/s | Vgz: {vgz} mm/s")
-            print(f"📏 ToF Height: {tof_distance} mm")
-            print(f"📡 Takeoff Height: {height} cm")
-            print(f"🛰️ Barometer Height: {baro_height} cm")
-            print("=" * 50)
-            
             time.sleep(0.1)
     
     except KeyboardInterrupt:

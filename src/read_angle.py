@@ -2,7 +2,7 @@ from djitellopy import Tello
 import time
 
 # Địa chỉ IP của Tello (Cập nhật nếu cần)
-TELLO_IP = "192.168.137.119"
+TELLO_IP = "192.168.137.142"
 
 def main():
     # Kết nối với drone
