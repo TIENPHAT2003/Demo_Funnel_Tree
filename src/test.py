@@ -3,7 +3,7 @@ import time
 import threading
 import sys
 import math
-TELLO_IP = "192.168.137.127"
+TELLO_IP = "192.168.137.237"
 
 class PID:
     def __init__(self, Kp, Ki, Kd, sample_time, output_limits=(-200, 200)):
@@ -53,7 +53,7 @@ class DroneController:
         }
 
         self.start_pid_threads(self.pid_configs)
-
+   
     def adaptive_speed(self, traveled_distance, target_distance):
         if traveled_distance >= target_distance * 0.5: 
             return math.ceil(self.DEFAULT_SPEED/20) * 10  
