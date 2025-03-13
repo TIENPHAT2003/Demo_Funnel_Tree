@@ -2,8 +2,8 @@ from djitellopy import Tello
 import time
 import threading
 import sys
-
-TELLO_IP = "192.168.137.245"
+import math
+TELLO_IP = "192.168.137.127"
 
 class PID:
     def __init__(self, Kp, Ki, Kd, sample_time, output_limits=(-200, 200)):
@@ -47,27 +47,44 @@ class DroneController:
             "yaw": (PID(5, 5, 0, 100), PID(0.5, 0.005, 0, 100), self.tello.get_yaw, 0),
             "roll": (PID(3, 1, 0, 100), PID(0.5, 0.005, 0, 100), self.tello.get_roll, 0),
             "pitch": (PID(3, 1, 0, 100), PID(0.5, 0.005, 0, 100), self.tello.get_pitch, 0),
-            "vx": (PID(10, 50, 0, 100), PID(1, 0.5, 0, 100), self.tello.get_speed_x, self.DEFAULT_SPEED),
-            "vy": (PID(10, 50, 0, 100), PID(1, 0.5, 0, 100), self.tello.get_speed_y, self.DEFAULT_SPEED),
-            "vz": (PID(10, 50, 0, 100), PID(1, 0.5, 0, 100), self.tello.get_speed_z, self.DEFAULT_SPEED),
+            "vx": (PID(10, 50, 0, 100), PID(1, 0.05, 0, 100), self.tello.get_speed_x, self.DEFAULT_SPEED),
+            "vy": (PID(10, 50, 0, 100), PID(1, 0.05, 0, 100), self.tello.get_speed_y, self.DEFAULT_SPEED),
+            "vz": (PID(10, 50, 0, 100), PID(1, 0.05, 0, 100), self.tello.get_speed_z, self.DEFAULT_SPEED),
         }
 
         self.start_pid_threads(self.pid_configs)
 
     def adaptive_speed(self, traveled_distance, target_distance):
-        if traveled_distance >= target_distance * 0.6:  # Khi đạt 60% quãng đường, giảm tốc
-            return self.DEFAULT_SPEED // 2  # Giảm tốc độ 50%
-        return self.DEFAULT_SPEED  # Giữ nguyên tốc độ
+        if traveled_distance >= target_distance * 0.5: 
+            return math.ceil(self.DEFAULT_SPEED/20) * 10  
+        return self.DEFAULT_SPEED
+
+    def brake(self):
+        # Lấy vận tốc hiện tại
+        vx = self.tello.get_speed_x() * -2  # Đảo ngược vận tốc X
+        vy = self.tello.get_speed_y() * -2  # Đảo ngược vận tốc Y
+        vz = self.tello.get_speed_z() * -2  # Đảo ngược vận tốc Z
+        
+        print(f"🛑 Đang hãm tốc với vận tốc ngược: Vx={vx}, Vy={vy}, Vz={vz}")
+
+        # Gửi lệnh vận tốc ngược lại
+        self.tello.send_rc_control(vy, vx, vz, 0)
+        time.sleep(1.5)  
+
+        # Dừng drone hoàn toàn
+        self.tello.send_rc_control(0, 0, 0, 0)
+        print("✅ Drone đã dừng hẳn.")
+
 
     def move_axis(self, distance, direction):
         if distance == 0:
             return
 
         if distance > self.MAX_DISTANCE:
-            print(f"[WARNING] Khoảng cách quá lớn: {distance} mm. Giới hạn: {self.MAX_DISTANCE} mm.")
+            print(f"[WARNING] Khoảng cách quá lớn: {distance} cm. Giới hạn: {self.MAX_DISTANCE} cm.")
             distance = self.MAX_DISTANCE
 
-        print(f"[INFO] Di chuyển {direction} {distance} mm với tốc độ {self.DEFAULT_SPEED} cm/s")
+        print(f"[INFO] Di chuyển {direction} {distance} cm với tốc độ {self.DEFAULT_SPEED} cm/s")
 
         traveled_distance = 0
         start_time = time.time()
@@ -87,7 +104,7 @@ class DroneController:
 
             if direction == "forward":
                 self.tello.send_rc_control(0, speed, 0, 0)
-                velocity = self.tello.get_speed_x() * 10
+                velocity = self.tello.get_speed_x() * 10 
             elif direction == "back":
                 self.tello.send_rc_control(0, -speed, 0, 0)
                 velocity = -self.tello.get_speed_x() * 10
@@ -104,7 +121,7 @@ class DroneController:
                 self.tello.send_rc_control(0, 0, -speed, 0)
                 velocity = -self.tello.get_speed_z() * 10
 
-            traveled_distance += abs(velocity) * delta_time
+            traveled_distance += (abs(velocity) + 10) * delta_time
             sys.stdout.write(f"\r📌 Pitch: {self.tello.get_pitch()}° | Roll: {self.tello.get_roll()}° | Yaw: {self.tello.get_yaw()}° | "
                             f"💨 Speed -> Vx: {self.tello.get_speed_x()} dm/s | Vy: {self.tello.get_speed_y()} dm/s | Vz: {self.tello.get_speed_z()} dm/s | "
                             f"📏 Traveled Distance: {traveled_distance:.2f} mm / {distance} mm | "
@@ -112,8 +129,8 @@ class DroneController:
             sys.stdout.flush()
             time.sleep(0.1)
 
-        self.tello.send_rc_control(0, 0, 0, 0)  
-        time.sleep(0.5)
+        self.brake() 
+        time.sleep(2)
 
     def start_pid_threads(self, pid_configs):
         for key, (pid_outer, pid_inner, get_current_value, target) in pid_configs.items():
@@ -147,6 +164,7 @@ if __name__ == "__main__":
     drone = DroneController(tello)
     try:
         tello.takeoff()
+        time.sleep(1)
         print("🛫 Drone đã cất cánh!")
         waypoints = [(120, 0, 0, 90)]
         drone.move_to_waypoints(waypoints)
