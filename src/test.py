@@ -3,7 +3,7 @@ import time
 import threading
 import sys
 import math
-TELLO_IP = "192.168.137.195"
+TELLO_IP = "192.168.137.108"
 
 class PID:
     def __init__(self, Kp, Ki, Kd, sample_time, output_limits=(-200, 200)):
@@ -44,53 +44,32 @@ class DroneController:
         self.control_outputs = {"yaw": 0, "pitch": 0, "roll": 0, "vx": 0, "vy": 0, "vz": 0}
 
         self.pid_configs = {
-            "yaw": (PID(5, 5, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_yaw, 0),
-            "roll": (PID(3, 1, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_roll, 0),
-            "pitch": (PID(3, 1, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_pitch, 0),
-            "vx": (PID(10, 50, 0, 100), PID(1, 0.05, 0, 100), self.tello.get_speed_x, self.DEFAULT_SPEED),
-            "vy": (PID(10, 50, 0, 100), PID(1, 0.05, 0, 100), self.tello.get_speed_y, self.DEFAULT_SPEED),
-            "vz": (PID(10, 50, 0, 100), PID(1, 0.05, 0, 100), self.tello.get_speed_z, self.DEFAULT_SPEED),
+            # "yaw": (PID(5, 5, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_yaw, 0),
+            # "roll": (PID(3, 1, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_roll, 0),
+            # "pitch": (PID(3, 1, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_pitch, 0),
+            "vx": (PID(10, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_x, self.DEFAULT_SPEED),
+            "vy": (PID(10, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_y, self.DEFAULT_SPEED),
+            "vz": (PID(10, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_z, self.DEFAULT_SPEED),
         }
 
     def adaptive_speed(self, traveled_distance, target_distance):
         if traveled_distance >= target_distance * 0.5:  
-            return max(self.DEFAULT_SPEED * 0.3, 10)  
+            return max(self.DEFAULT_SPEED * 0.3, 10)
         return self.DEFAULT_SPEED
 
-    def adjust_yaw(self, target_yaw):
-        pid_outer, pid_inner, yaw_getter, _ = self.pid_configs["yaw"]
-        pid_outer.setpoint = target_yaw
-        pid_inner.setpoint = 0
-
-        max_attempts = 30  # Giới hạn số lần lặp
-        attempts = 0
-
-        while attempts < max_attempts:
-            current_yaw = yaw_getter()
-            outer_error = target_yaw - current_yaw
-            if abs(outer_error) < 2:
-                break  # Nếu sai số nhỏ hơn 2 độ thì dừng
-
-            inner_control_signal = pid_inner.compute(outer_error)
-            control_signal = int(pid_outer.compute(inner_control_signal))
-            self.tello.send_rc_control(0, 0, 0, control_signal)
-
-            time.sleep(0.1)
-            attempts += 1  # Tăng số lần thử
-
-        # Đảm bảo drone dừng quay sau khi kết thúc vòng lặp
-        self.tello.send_rc_control(0, 0, 0, 0)
-        print(f"✅ Yaw đã điều chỉnh xong: {target_yaw}° sau {attempts} lần thử")
-
-
     def brake(self):
-        vx = self.tello.get_speed_x() * -2
-        vy = self.tello.get_speed_y() * -2
-        vz = self.tello.get_speed_z() * -2
+        # Lấy vận tốc hiện tại
+        vx = self.tello.get_speed_x() * -2  # Đảo ngược vận tốc X
+        vy = self.tello.get_speed_y() * -2  # Đảo ngược vận tốc Y
+        vz = self.tello.get_speed_z() * -2  # Đảo ngược vận tốc Z
         
         print(f"🛑 Đang hãm tốc với vận tốc ngược: Vx={vx}, Vy={vy}, Vz={vz}")
+
+        # Gửi lệnh vận tốc ngược lại
         self.tello.send_rc_control(vy, vx, vz, 0)
-        time.sleep(1.5)
+        time.sleep(1.5)  
+
+        # Dừng drone hoàn toàn
         self.tello.send_rc_control(0, 0, 0, 0)
         print("✅ Drone đã dừng hẳn.")
 
@@ -119,7 +98,6 @@ class DroneController:
             last_time = current_time
 
             speed = self.adaptive_speed(traveled_distance, distance)
-            self.adjust_yaw(self.current_yaw)  # Điều chỉnh yaw liên tục trong khi di chuyển
 
             if direction == "forward":
                 self.tello.send_rc_control(0, speed, 0, 0)
@@ -141,20 +119,29 @@ class DroneController:
                 velocity = -self.tello.get_speed_z() * 10
 
             traveled_distance += (abs(velocity) + 10) * delta_time
+            sys.stdout.write(f"\r📌 Pitch: {self.tello.get_pitch()}° | Roll: {self.tello.get_roll()}° | Yaw: {self.tello.get_yaw()}° | "
+                 f"💨 Speed -> Vx: {self.tello.get_speed_x()} dm/s | Vy: {self.tello.get_speed_y()} dm/s | Vz: {self.tello.get_speed_z()} dm/s | "
+                 f"📏 Traveled Distance: {traveled_distance:.2f} cm / {distance} cm | "
+                 f"ToF Height: {self.tello.get_distance_tof()} mm | Takeoff Height: {self.tello.get_height()} cm | 🔋 Battery: {self.tello.get_battery()}%\n")
+            sys.stdout.flush()
             time.sleep(0.1)
-        
-        self.brake()
+        self.brake() 
         time.sleep(2)
+
+    def start_pid_threads(self, pid_configs):
+        for key, (pid_outer, pid_inner, get_current_value, target) in pid_configs.items():
+            threading.Thread(target=pid_control_loop, args=(pid_outer, pid_inner, get_current_value, lambda: target, self.control_outputs, key), daemon=True).start()
 
     def move_to_xyz(self, x, y, z, yaw):
         print(f"[INFO] Di chuyển đến tọa độ: X={x}, Y={y}, Z={z}, Yaw={yaw}")
         self.move_axis(abs(x - self.current_position['x']), 'forward' if x > self.current_position['x'] else 'back')
         self.move_axis(abs(y - self.current_position['y']), 'right' if y > self.current_position['y'] else 'left')
         self.move_axis(abs(z - self.current_position['z']), 'up' if z > self.current_position['z'] else 'down')
-        self.adjust_yaw(yaw)
         self.current_yaw = yaw
+        self.tello.rotate_clockwise(yaw)
 
     def move_to_waypoints(self, waypoints):
+        self.start_pid_threads(self.pid_configs)
         for waypoint in waypoints:
             x, y, z, yaw = waypoint
             self.move_to_xyz(x, y, z, yaw)
@@ -176,6 +163,7 @@ if __name__ == "__main__":
         tello.takeoff()
         time.sleep(1)
         print("🛫 Drone đã cất cánh!")
+        
         waypoints = [(120, 0, 0, 180), (120, 0, 0, 0)]
         drone.move_to_waypoints(waypoints)
     except KeyboardInterrupt:
