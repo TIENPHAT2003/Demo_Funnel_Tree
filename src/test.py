@@ -3,7 +3,7 @@ import time
 import threading
 import sys
 import math
-TELLO_IP = "192.168.137.108"
+TELLO_IP = "192.168.137.203"
 
 class PID:
     def __init__(self, Kp, Ki, Kd, sample_time, output_limits=(-200, 200)):
@@ -47,15 +47,16 @@ class DroneController:
             # "yaw": (PID(5, 5, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_yaw, 0),
             # "roll": (PID(3, 1, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_roll, 0),
             # "pitch": (PID(3, 1, 0, 100), PID(0.3, 0.005, 0, 100), self.tello.get_pitch, 0),
-            "vx": (PID(10, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_x, self.DEFAULT_SPEED),
-            "vy": (PID(10, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_y, self.DEFAULT_SPEED),
-            "vz": (PID(10, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_z, self.DEFAULT_SPEED),
+            "vx": (PID(15, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_x, self.DEFAULT_SPEED),
+            "vy": (PID(15, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_y, self.DEFAULT_SPEED),
+            "vz": (PID(15, 50, 0, 100), PID(1.5, 0.5, 0, 100), self.tello.get_speed_z, self.DEFAULT_SPEED),
         }
 
     def adaptive_speed(self, traveled_distance, target_distance):
         if traveled_distance >= target_distance * 0.5:  
-            return max(self.DEFAULT_SPEED * 0.3, 10)
-        return self.DEFAULT_SPEED
+            return int(max(self.DEFAULT_SPEED * 0.5, 10))
+        return int(max(self.DEFAULT_SPEED, 10))
+
 
     def brake(self):
         # Lấy vận tốc hiện tại
@@ -118,7 +119,7 @@ class DroneController:
                 self.tello.send_rc_control(0, 0, -speed, 0)
                 velocity = -self.tello.get_speed_z() * 10
 
-            traveled_distance += (abs(velocity) + 10) * delta_time
+            traveled_distance += (abs(velocity) + 8) * delta_time
             sys.stdout.write(f"\r📌 Pitch: {self.tello.get_pitch()}° | Roll: {self.tello.get_roll()}° | Yaw: {self.tello.get_yaw()}° | "
                  f"💨 Speed -> Vx: {self.tello.get_speed_x()} dm/s | Vy: {self.tello.get_speed_y()} dm/s | Vz: {self.tello.get_speed_z()} dm/s | "
                  f"📏 Traveled Distance: {traveled_distance:.2f} cm / {distance} cm | "
@@ -164,7 +165,7 @@ if __name__ == "__main__":
         time.sleep(1)
         print("🛫 Drone đã cất cánh!")
         
-        waypoints = [(120, 0, 0, 180), (120, 0, 0, 0)]
+        waypoints = [(300, 0, 0, 180), (300, 0, 0, 0)]
         drone.move_to_waypoints(waypoints)
     except KeyboardInterrupt:
         print("\n🛑 Dừng chương trình... Hạ cánh!")
