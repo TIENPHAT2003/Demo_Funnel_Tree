@@ -1,31 +1,33 @@
+from ultralytics import YOLO
+from djitellopy import Tello
 import cv2
-import torch
+TELLO_IP = "192.168.137.108"
+# Tải mô hình YOLOv8
+model = YOLO('yolov8s.pt')  # Có thể thay bằng 'yolov8m.pt', 'yolov8l.pt', hoặc 'yolov8x.pt'
 
-# Tải mô hình YOLOv5 đã được huấn luyện
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Thay bằng 'yolov5m' hoặc 'yolov5l' nếu cần
-
-# Mở camera
-cap = cv2.VideoCapture(0)  # 0 là camera mặc định
+# Khởi tạo Tello
+tello = Tello(host=TELLO_IP)
+tello.connect()
+tello.streamon()  # Bắt đầu stream video từ camera
 
 while True:
-    # Đọc frame từ camera
-    ret, frame = cap.read()
-    if not ret:
-        break
-
+    # Lấy frame từ camera Tello
+    frame = tello.get_frame_read().frame
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     # Phát hiện đối tượng
     results = model(frame)
 
     # Hiển thị kết quả
-    results.render()  # Vẽ bounding boxes lên frame
+    frame_with_boxes = results[0].plot()  # Vẽ hộp bao quanh các đối tượng
 
     # Hiển thị frame
-    cv2.imshow('YOLOv5 Object Detection', frame)
+    cv2.imshow('YOLOv8 Detection with Tello', frame_with_boxes)
 
     # Nhấn 'q' để thoát
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 # Giải phóng camera và đóng cửa sổ
-cap.release()
+tello.streamoff()  # Dừng stream
+tello.end()  # Ngắt kết nối với drone
 cv2.destroyAllWindows()

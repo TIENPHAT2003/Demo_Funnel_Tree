@@ -3,7 +3,7 @@ import time
 import threading
 import sys
 import math
-TELLO_IP = "192.168.137.203"
+TELLO_IP = "192.168.137.108"
 
 class PID:
     def __init__(self, Kp, Ki, Kd, sample_time, output_limits=(-200, 200)):
@@ -118,8 +118,11 @@ class DroneController:
             elif direction == "down":
                 self.tello.send_rc_control(0, 0, -speed, 0)
                 velocity = -self.tello.get_speed_z() * 10
-
-            traveled_distance += (abs(velocity) + 8) * delta_time
+            if distance < 200:
+                error = 8
+            else: 
+                error = 5
+            traveled_distance += (abs(velocity) + error) * delta_time
             sys.stdout.write(f"\r📌 Pitch: {self.tello.get_pitch()}° | Roll: {self.tello.get_roll()}° | Yaw: {self.tello.get_yaw()}° | "
                  f"💨 Speed -> Vx: {self.tello.get_speed_x()} dm/s | Vy: {self.tello.get_speed_y()} dm/s | Vz: {self.tello.get_speed_z()} dm/s | "
                  f"📏 Traveled Distance: {traveled_distance:.2f} cm / {distance} cm | "
@@ -165,7 +168,7 @@ if __name__ == "__main__":
         time.sleep(1)
         print("🛫 Drone đã cất cánh!")
         
-        waypoints = [(300, 0, 0, 180), (300, 0, 0, 0)]
+        waypoints = [(120, 0, 0, 180), (120, 0, 0, 0)]
         drone.move_to_waypoints(waypoints)
     except KeyboardInterrupt:
         print("\n🛑 Dừng chương trình... Hạ cánh!")
