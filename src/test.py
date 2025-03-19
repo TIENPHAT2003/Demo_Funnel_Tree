@@ -2,7 +2,6 @@ from djitellopy import Tello
 import time
 import threading
 import sys
-import math
 TELLO_IP = "192.168.137.108"
 
 class PID:
